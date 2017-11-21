@@ -1,2 +1,0 @@
-cinq-collector-dns
-==================
