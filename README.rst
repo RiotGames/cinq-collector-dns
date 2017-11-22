@@ -2,7 +2,37 @@
 cinq-collector-dns
 ******************
 
+===========
+Description
+===========
+
 This collector gathers and collates all related DNS information, with which the relevant DNS auditors can analyse for potential security issues.
 
-Please check out the `README <https://github.com/RiotGames/cloud-inquisitor/blob/master/docs/backend/README.rst>`_ 
-for further details on the how ``cinq-collector-dns`` works with further detauks on ``Cloud Inquisitor`` backend is built and what technologies we use.
+Please check out the `README <https://github.com/RiotGames/cloud-inquisitor/blob/master/docs/backend/README.rst>`_
+for the further details on the how ``cinq-collector-dns`` works with further detauks on ``Cloud Inquisitor`` backend is built and what technologies we use.
+
+=====================
+Configuration Options
+=====================
+
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| Option name         | Default Value                        | Type   | Description                                                                      |
++=====================+======================================+========+==================================================================================+
+| enabled             | False                                | bool   | Enable the DNS collector plugin                                                  |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| interval            | 15                                   | int    | Run frequency in minutes                                                         |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| cloudflare_api_key  |                                      | string | CloudFlare API Key                                                               |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| cloudflare_email    |                                      | string | Email address associated with the API key                                        |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| cloudflare_enabled  | False                                | bool   | Enable CloudFlare as a source for DNS records                                    |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| cloudflare_endpoint | https://api.cloudflare.com/client/v4 | string | CloudFlare API endpoint                                                          |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| axfr_domains        | []                                   | array  | Domains to attempt to perform zone transfers for                                 |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| axfr_server         |                                      | string | Server from where to request zone transfers                                      |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
+| axfr_enabled        | False                                | bool   | Enable using DNS Zone Transfers for records                                      |
++---------------------+--------------------------------------+--------+----------------------------------------------------------------------------------+
