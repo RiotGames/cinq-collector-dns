@@ -1,5 +1,5 @@
 from cloud_inquisitor.constants import ROLE_USER, HTTP
-from cloud_inquisitor.plugins.types.resources import DNSZone, DNSRecord
+from cloud_inquisitor.plugins.types.resources import DNSZone
 from cloud_inquisitor.plugins.views import BaseView
 from cloud_inquisitor.utils import MenuItem
 from cloud_inquisitor.wrappers import check_auth, rollback
