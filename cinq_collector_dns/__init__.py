@@ -1,10 +1,11 @@
 import requests
-from cloud_inquisitor import db, Account
 from cloud_inquisitor.config import dbconfig, ConfigOption
 from cloud_inquisitor.constants import AccountTypes
+from cloud_inquisitor.database import db
 from cloud_inquisitor.exceptions import CloudFlareError
 from cloud_inquisitor.plugins import BaseCollector, CollectorType
 from cloud_inquisitor.plugins.types.resources import DNSZone, DNSRecord
+from cloud_inquisitor.schema import Account
 from cloud_inquisitor.utils import get_resource_id
 from cloud_inquisitor.wrappers import retry
 from dns import zone as dns_zone, query
