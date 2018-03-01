@@ -18,7 +18,6 @@ class DNSCollector(BaseCollector):
     name = 'DNS'
     ns = 'collector_dns'
     type = CollectorType.GLOBAL
-    enabled = dbconfig.get('enabled', ns, True)
     interval = dbconfig.get('interval', ns, 15)
     options = (
         ConfigOption('enabled', False, 'bool', 'Enable the DNS collector plugin'),
