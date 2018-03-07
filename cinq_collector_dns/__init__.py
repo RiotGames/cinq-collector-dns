@@ -207,11 +207,12 @@ class DNSCollector(BaseCollector):
                 }
 
                 z = dns_zone.from_xfr(query.xfr(self.axfr_server, zoneName))
-                for rr in [{'name': x[0], 'ttl': x[1], 'rdata': x[2]} for x in z.iterate_rdatas()]:
+                rdata_fields = ('name', 'ttl', 'rdata')
+                for rr in [dict(zip(rdata_fields, x)) for x in z.iterate_rdatas()]:
                     record_name = rr['name'].derelativize(z.origin).to_text()
                     zone['records'].append(
                     {
-                        'id': get_resource_id('axfrr', record_name, list(zone.values())),
+                        'id': get_resource_id('axfrr', record_name, ['{}={}'.format(k, str(v)) for k, v in rr.items()]),
                         'zone_id': zone['zone_id'],
                         'name': record_name,
                         'value': sorted([rr['rdata'].to_text()]),
@@ -236,32 +237,35 @@ class DNSCollector(BaseCollector):
         zones = []
 
         for zobj in self.__cloudflare_list_zones():
-            self.log.debug('Processing DNS zone CloudFlare/{}'.format(zobj['name']))
-            zone = {
-                'zone_id': get_resource_id('cfz', zobj['name']),
-                'name': zobj['name'],
-                'source': 'CloudFlare',
-                'comment': None,
-                'tags': {},
-                'records': []
-            }
+            try:
+                self.log.debug('Processing DNS zone CloudFlare/{}'.format(zobj['name']))
+                zone = {
+                    'zone_id': get_resource_id('cfz', zobj['name']),
+                    'name': zobj['name'],
+                    'source': 'CloudFlare',
+                    'comment': None,
+                    'tags': {},
+                    'records': []
+                }
 
-            for record in self.__cloudflare_list_zone_records(zobj['id']):
-                zone['records'].append({
-                    'id': get_resource_id('cfr', zobj['id'], ['{}={}'.format(k, v) for k, v in record.items()]),
-                    'zone_id': zone['zone_id'],
-                    'name': record['name'],
-                    'value': record['value'],
-                    'type': record['type']
-                })
+                for record in self.__cloudflare_list_zone_records(zobj['id']):
+                    zone['records'].append({
+                        'id': get_resource_id('cfr', zobj['id'], ['{}={}'.format(k, v) for k, v in record.items()]),
+                        'zone_id': zone['zone_id'],
+                        'name': record['name'],
+                        'value': record['value'],
+                        'type': record['type']
+                    })
 
-            if len(zone['records']) > 0:
-                zones.append(zone)
+                if len(zone['records']) > 0:
+                    zones.append(zone)
+            except CloudFlareError:
+                self.log.exception('Failed getting records for CloudFlare zone {}'.format(zobj['name']))
 
         return zones
 
     # region Helper functions for CloudFlare
-    def __cloudflare_request(self, path, args=None):
+    def __cloudflare_request(self, path, args=dict):
         """Helper function to interact with the CloudFlare API.
 
         Args:
@@ -279,6 +283,9 @@ class DNSCollector(BaseCollector):
                 'Content-Type': 'application/json'
             })
             self.cloudflare_initialized = True
+
+        if 'per_page' not in args:
+            args['per_page'] = 100
 
         response = self.cloudflare_session.get(self.cloudflare_endpoint + path, params=args)
         if response.status_code != 200:
@@ -313,7 +320,6 @@ class DNSCollector(BaseCollector):
 
         return zones
 
-    @retry
     def __cloudflare_list_zone_records(self, zoneID, **kwargs):
         """Helper function to list all records on a CloudFlare DNS Zone. Returns a `dict` containing the records and
         their information.
