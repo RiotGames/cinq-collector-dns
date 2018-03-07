@@ -141,10 +141,8 @@ class DNSCollector(BaseCollector):
             try:
                 existing_zone = DNSZone.get(zone['zone_id'])
                 existing_records = {rec.id: rec for rec in existing_zone.records}
-                print(existing_records)
 
                 for data in zone['records']:
-                    print(data['id'])
                     if data['id'] in existing_records:
                         record = existing_records[data['id']]
                         if record.update(data):
@@ -229,7 +227,6 @@ class DNSCollector(BaseCollector):
 
         return zones
 
-    @retry
     def get_cloudflare_records(self):
         """Return a `list` of `dict`s containing the zones and their records, obtained from the CloudFlare API
 
@@ -239,6 +236,7 @@ class DNSCollector(BaseCollector):
         zones = []
 
         for zobj in self.__cloudflare_list_zones():
+            self.log.debug('Processing DNS zone CloudFlare/{}'.format(zobj['name']))
             zone = {
                 'zone_id': get_resource_id('cfz', zobj['name']),
                 'name': zobj['name'],
@@ -250,7 +248,7 @@ class DNSCollector(BaseCollector):
 
             for record in self.__cloudflare_list_zone_records(zobj['id']):
                 zone['records'].append({
-                    'id': get_resource_id('cfr', zobj['id'], record),
+                    'id': get_resource_id('cfr', zobj['id'], ['{}={}'.format(k, v) for k, v in record.items()]),
                     'zone_id': zone['zone_id'],
                     'name': record['name'],
                     'value': record['value'],
@@ -288,7 +286,6 @@ class DNSCollector(BaseCollector):
 
         return response.json()
 
-    @retry
     def __cloudflare_list_zones(self, **kwargs):
         """Helper function to list all zones registered in the CloudFlare system. Returns a `list` of the zones
 
