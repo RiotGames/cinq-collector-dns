@@ -341,7 +341,7 @@ class DNSCollector(BaseCollector):
             info = response['result_info']
 
             # Check if we have received all records, and if not iterate over the result set
-            if 'total_pages' not in info or page == info['total_pages']:
+            if 'total_pages' not in info or page >= info['total_pages']:
                 done = True
             else:
                 page += 1
