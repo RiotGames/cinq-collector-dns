@@ -2,6 +2,8 @@
 cinq-collector-dns
 ******************
 
+Please open issues in the `Cloud-Inquisitor <https://github.com/RiotGames/cloud-inquisitor/issues/new?labels=cinq-collector-dns>`_ repository
+
 ===========
 Description
 ===========
