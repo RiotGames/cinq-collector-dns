@@ -1,18 +1,16 @@
+from collections import defaultdict
+
 import requests
 from cloud_inquisitor.config import dbconfig, ConfigOption
-from cloud_inquisitor.constants import AccountTypes
 from cloud_inquisitor.database import db
 from cloud_inquisitor.exceptions import CloudFlareError
 from cloud_inquisitor.plugins import BaseCollector, CollectorType
+from cloud_inquisitor.plugins.types.accounts import AXFRAccount, CloudFlareAccount
 from cloud_inquisitor.plugins.types.resources import DNSZone, DNSRecord
-from cloud_inquisitor.schema import Account
 from cloud_inquisitor.utils import get_resource_id
 from cloud_inquisitor.wrappers import retry
 from dns import zone as dns_zone, query
 from dns.rdatatype import to_text as type_to_text
-
-AXFR_ACCOUNT_NAME = 'DNS: AXFR'
-CF_ACCOUNT_NAME = 'DNS: CloudFlare'
 
 class DNSCollector(BaseCollector):
     name = 'DNS'
@@ -22,13 +20,7 @@ class DNSCollector(BaseCollector):
     options = (
         ConfigOption('enabled', False, 'bool', 'Enable the DNS collector plugin'),
         ConfigOption('interval', 15, 'int', 'Run frequency in minutes'),
-        ConfigOption('cloudflare_api_key', '', 'string', 'CloudFlare API Key'),
-        ConfigOption('cloudflare_email', '', 'string', 'Email address associated with the API key'),
         ConfigOption('cloudflare_enabled', False, 'bool', 'Enable CloudFlare as a source for DNS records'),
-        ConfigOption('cloudflare_endpoint', 'https://api.cloudflare.com/client/v4', 'string',
-                     'CloudFlare API endpoint'),
-        ConfigOption('axfr_domains', [], 'array', 'Domains to attempt to perform zone transfers for'),
-        ConfigOption('axfr_server', '', 'string', 'Server from where to request zone transfers'),
         ConfigOption('axfr_enabled', False, 'bool', 'Enable using DNS Zone Transfers for records')
     )
 
@@ -36,56 +28,28 @@ class DNSCollector(BaseCollector):
         super().__init__()
 
         self.axfr_enabled = self.dbconfig.get('axfr_enabled', self.ns, False)
-        self.axfr_server = self.dbconfig.get('axfr_server', self.ns)
-        self.axfr_domains = self.dbconfig.get('axfr_domains', self.ns)
-
         self.cloudflare_enabled = self.dbconfig.get('cloudflare_enabled', self.ns, False)
-        self.cloudflare_api_key = self.dbconfig.get('cloudflare_api_key', self.ns)
-        self.cloudflare_email = self.dbconfig.get('cloudflare_email', self.ns)
-        self.cloudflare_endpoint = self.dbconfig.get('cloudflare_endpoint', self.ns)
-        self.cloudflare_initialized = False
-        self.cloudflare_session = None
 
-        if self.axfr_enabled:
-            acct = Account.get(AXFR_ACCOUNT_NAME)
-            if not acct:
-                acct = Account()
-                acct.account_name = AXFR_ACCOUNT_NAME
-                acct.account_number = sum(map(ord, AXFR_ACCOUNT_NAME)) * -1
-                acct.account_type = AccountTypes.DNS_AXFR
-                acct.contacts = []
-                acct.enabled = True
+        self.axfr_accounts = list(AXFRAccount.get_all().values())
+        self.cf_accounts = list(CloudFlareAccount.get_all().values())
 
-                db.session.add(acct)
-                db.session.commit()
-
-            self.axfr_account = acct
-
-        if self.cloudflare_enabled:
-            acct = Account.get(CF_ACCOUNT_NAME)
-            if not acct:
-                acct = Account()
-                acct.account_name = CF_ACCOUNT_NAME
-                acct.account_number = sum(map(ord, CF_ACCOUNT_NAME)) * -1
-                acct.account_type = AccountTypes.DNS_CLOUDFLARE
-                acct.contacts = []
-                acct.enabled = True
-
-                db.session.add(acct)
-                db.session.commit()
-
-            self.cloudflare_account = acct
+        self.cloudflare_initialized = defaultdict(lambda: False)
+        self.cloudflare_session = {}
 
     def run(self):
         if self.axfr_enabled:
             try:
-                self.process_zones(self.get_axfr_records(), self.axfr_account)
+                for account in self.axfr_accounts:
+                    records = self.get_axfr_records(account.server, account.domains)
+                    self.process_zones(records, account)
             except:
                 self.log.exception('Failed processing domains via AXFR')
 
         if self.cloudflare_enabled:
             try:
-                self.process_zones(self.get_cloudflare_records(), self.cloudflare_account)
+                for account in self.cf_accounts:
+                    records = self.get_cloudflare_records(account=account)
+                    self.process_zones(records, account)
             except:
                 self.log.exception('Failed processing domains via CloudFlare')
 
@@ -188,14 +152,14 @@ class DNSCollector(BaseCollector):
         # endregion
 
     @retry
-    def get_axfr_records(self):
+    def get_axfr_records(self, server, domains):
         """Return a `list` of `dict`s containing the zones and their records, obtained from the DNS server
 
         Returns:
             :obj:`list` of `dict`
         """
         zones = []
-        for zoneName in self.axfr_domains:
+        for zoneName in domains:
             try:
                 zone = {
                     'zone_id': get_resource_id('axfrz', zoneName),
@@ -206,7 +170,7 @@ class DNSCollector(BaseCollector):
                     'records': []
                 }
 
-                z = dns_zone.from_xfr(query.xfr(self.axfr_server, zoneName))
+                z = dns_zone.from_xfr(query.xfr(server, zoneName))
                 rdata_fields = ('name', 'ttl', 'rdata')
                 for rr in [dict(zip(rdata_fields, x)) for x in z.iterate_rdatas()]:
                     record_name = rr['name'].derelativize(z.origin).to_text()
@@ -228,15 +192,16 @@ class DNSCollector(BaseCollector):
 
         return zones
 
-    def get_cloudflare_records(self):
+    def get_cloudflare_records(self, *, account):
         """Return a `list` of `dict`s containing the zones and their records, obtained from the CloudFlare API
 
         Returns:
+            account (:obj:`CloudFlareAccount`): A CloudFlare Account object
             :obj:`list` of `dict`
         """
         zones = []
 
-        for zobj in self.__cloudflare_list_zones():
+        for zobj in self.__cloudflare_list_zones(account=account):
             try:
                 self.log.debug('Processing DNS zone CloudFlare/{}'.format(zobj['name']))
                 zone = {
@@ -248,7 +213,7 @@ class DNSCollector(BaseCollector):
                     'records': []
                 }
 
-                for record in self.__cloudflare_list_zone_records(zobj['id']):
+                for record in self.__cloudflare_list_zone_records(account=account, zoneID=zobj['id']):
                     zone['records'].append({
                         'id': get_resource_id('cfr', zobj['id'], ['{}={}'.format(k, v) for k, v in record.items()]),
                         'zone_id': zone['zone_id'],
@@ -265,38 +230,43 @@ class DNSCollector(BaseCollector):
         return zones
 
     # region Helper functions for CloudFlare
-    def __cloudflare_request(self, path, args=dict):
+    def __cloudflare_request(self, *, account, path, args=None):
         """Helper function to interact with the CloudFlare API.
 
         Args:
+            account (:obj:`CloudFlareAccount`): CloudFlare Account object
             path (`str`): URL endpoint to communicate with
             args (:obj:`dict` of `str`: `str`): A dictionary of arguments for the endpoint to consume
 
         Returns:
             `dict`
         """
-        if not self.cloudflare_initialized:
-            self.cloudflare_session = requests.Session()
-            self.cloudflare_session.headers.update({
-                'X-Auth-Email': self.cloudflare_email,
-                'X-Auth-Key': self.cloudflare_api_key,
+        if not args:
+            args = {}
+
+        if not self.cloudflare_initialized[account.account_id]:
+            self.cloudflare_session[account.account_id] = requests.Session()
+            self.cloudflare_session[account.account_id].headers.update({
+                'X-Auth-Email': account.email,
+                'X-Auth-Key': account.api_key,
                 'Content-Type': 'application/json'
             })
-            self.cloudflare_initialized = True
+            self.cloudflare_initialized[account.account_id] = True
 
         if 'per_page' not in args:
             args['per_page'] = 100
 
-        response = self.cloudflare_session.get(self.cloudflare_endpoint + path, params=args)
+        response = self.cloudflare_session[account.account_id].get(account.endpoint + path, params=args)
         if response.status_code != 200:
             raise CloudFlareError('Request failed: {}'.format(response.text))
 
         return response.json()
 
-    def __cloudflare_list_zones(self, **kwargs):
+    def __cloudflare_list_zones(self, *, account, **kwargs):
         """Helper function to list all zones registered in the CloudFlare system. Returns a `list` of the zones
 
         Args:
+            account (:obj:`CloudFlareAccount`): A CloudFlare Account object
             **kwargs (`dict`): Extra arguments to pass to the API endpoint
 
         Returns:
@@ -308,7 +278,7 @@ class DNSCollector(BaseCollector):
 
         while not done:
             kwargs['page'] = page
-            response = self.__cloudflare_request('/zones', kwargs)
+            response = self.__cloudflare_request(account=account, path='/zones', args=kwargs)
             info = response['result_info']
 
             if 'total_pages' not in info or page == info['total_pages']:
@@ -320,11 +290,12 @@ class DNSCollector(BaseCollector):
 
         return zones
 
-    def __cloudflare_list_zone_records(self, zoneID, **kwargs):
+    def __cloudflare_list_zone_records(self, *, account, zoneID, **kwargs):
         """Helper function to list all records on a CloudFlare DNS Zone. Returns a `dict` containing the records and
         their information.
 
         Args:
+            account (:obj:`CloudFlareAccount`): A CloudFlare Account object
             zoneID (`int`): Internal CloudFlare ID of the DNS zone
             **kwargs (`dict`): Additional arguments to be consumed by the API endpoint
 
@@ -337,7 +308,11 @@ class DNSCollector(BaseCollector):
 
         while not done:
             kwargs['page'] = page
-            response = self.__cloudflare_request('/zones/{}/dns_records'.format(zoneID), kwargs)
+            response = self.__cloudflare_request(
+                account=account,
+                path='/zones/{}/dns_records'.format(zoneID),
+                args=kwargs
+            )
             info = response['result_info']
 
             # Check if we have received all records, and if not iterate over the result set
