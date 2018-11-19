@@ -3,6 +3,12 @@ from cloud_inquisitor.plugins.types.resources import DNSZone
 from cloud_inquisitor.plugins.views import BaseView
 from cloud_inquisitor.utils import MenuItem
 from cloud_inquisitor.wrappers import check_auth, rollback
+from cloud_inquisitor.json_utils import InquisitorJSONEncoder
+
+from flask import Response
+from base64 import b64encode
+import json
+
 
 
 class DNSZoneList(BaseView):
@@ -70,3 +76,35 @@ class DNSZoneRecords(BaseView):
             'recordCount': len(zone.records),
             'records': zone.records[start_offset:end_offset]
         })
+
+
+class DNSZonesExport(BaseView):
+    URLS = ['/api/v1/dns/zonesExport']
+
+    @rollback
+    @check_auth(ROLE_USER)
+    def get(self):
+        self.reqparse.add_argument('page', type=int, default=1, required=True)
+        self.reqparse.add_argument('count', type=int, default=99999, required=True)
+        self.reqparse.add_argument('fileFormat', type=str, default='json', choices=['json', 'xlsx'])
+
+        args = self.reqparse.parse_args()
+
+        total, zones = DNSZone.search(limit=99999, page=args['page'])
+        output = [{
+            'zones': [x.to_json(with_records=False) for x in zones],
+            'zoneCount': total
+        }]
+
+        response = Response(
+            response=b64encode(
+                bytes(
+                    json.dumps(output, indent=4, cls=InquisitorJSONEncoder),
+                    'utf-8'
+                )
+            )
+        )
+        response.content_type = 'application/octet-stream'
+        response.status_code = HTTP.OK
+
+        return response
