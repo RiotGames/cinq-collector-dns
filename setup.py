@@ -20,6 +20,7 @@ setuptools.setup(
             'view_dns_zone_list = cinq_collector_dns.views:DNSZoneList',
             'view_dns_zone_details = cinq_collector_dns.views:DNSZoneDetails',
             'view_dns_zone_records = cinq_collector_dns.views:DNSZoneRecords',
+            'view_dns_zone_export = cinq_collector_dns.views:DNSZonesExport'
         ],
     },
 
