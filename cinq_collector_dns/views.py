@@ -84,15 +84,19 @@ class DNSZonesExport(BaseView):
     @rollback
     @check_auth(ROLE_USER)
     def get(self):
-        self.reqparse.add_argument('page', type=int, default=1, required=True)
-        self.reqparse.add_argument('count', type=int, default=99999, required=True)
-        self.reqparse.add_argument('fileFormat', type=str, default='json', choices=['json', 'xlsx'])
+        zones = DNSZone.get_all()
 
-        args = self.reqparse.parse_args()
+        output = []
+        for zoneID in zones:
+            zone = DNSZone.get(zoneID)
+            output.append({
+                'zone': zoneID,
+                'data': [x.to_json() for x in zone.records]
+            })
 
-        total, zones = DNSZone.search(limit=99999, page=args['page'])
+        total = len(output)
         output = [{
-            'zones': [x.to_json(with_records=False) for x in zones],
+            'zones': output,
             'zoneCount': total
         }]
 
